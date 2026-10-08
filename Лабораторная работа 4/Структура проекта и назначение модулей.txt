@@ -1,0 +1,165 @@
+lab4_project/
+├── university_rating/
+│   ├── __init__.py       # Публичный интерфейс пакета
+│   ├── validation.py     # Валидация типов, полей и диапазонов оценок
+│   ├── calculations.py # Расчёт среднего балла и статуса допуска
+│   ├── rating.py         # Построение и сортировка рейтинга студентов
+│   ├── report.py         # Преобразование рейтинга в форматированный текст
+│   └── main.py           # Демонстрационные данные и точка входа приложения
+└── tests/
+    └── test_rating.py    # Автоматические модульные тесты (unittest)
+```[cite: 10, 11]
+
+**Назначение модулей и принципы связности:**
+* **`validation.py`**: Отвечает исключительно за валидацию входных структур (числовые диапазоны, отсутствие лишних типов и признак присутствия полей)[cite: 10, 11].
+* **`calculations.py`**: Чистая вычислительная логика. Содержит функцию `calculate_average` и `determine_status` с поддержкой передаваемого порога `passing_average`[cite: 11].
+* **`rating.py`**: Собирает вычисления и валидацию, строит итоговый список рейтинга без мутации входных данных.
+* **`report.py`**: Отвечает только за представление данных в виде текста (без `print` внутри функций)[cite: 11, 12].
+* **`main.py`**: Точка входа (содержит демонстрационные данные, вызывает рейтинг и выводит отчёт в консоль)[cite: 11, 12].
+
+---
+
+### 3. Исходный код всех модулей
+
+#### 3.1. `university_rating/validation.py`
+```python
+"""Модуль проверки типов, полей и диапазонов данных студентов."""
+
+def validate_scores(scores):
+    """Возвращает проверенную копию последовательности баллов."""
+    if not isinstance(scores, (list, tuple)):
+        raise TypeError("scores должен быть списком или кортежем")
+    
+    checked = []
+    for score in scores:
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise TypeError("Балл должен быть числом")
+        if not 0 <= score <= 100:
+            raise ValueError("Балл должен быть от 0 до 100")
+        checked.append(float(score))
+    return checked
+
+def validate_student(student):
+    """Проверяет обязательные поля записи студента."""
+    if not isinstance(student, dict):
+        raise TypeError("Запись студента должна быть словарём")
+    
+    required = {"id", "name", "scores"}
+    missing = required - student.keys()
+    if missing:
+        raise ValueError(f"Отсутствуют поля: {sorted(missing)}")
+```[cite: 11]
+
+#### 3.2. `university_rating/calculations.py`
+```python
+"""Модуль математических расчётов и определения статуса допуска."""
+
+DEFAULT_PASSING_AVERAGE = 50.0
+
+def calculate_average(scores):
+    """Возвращает среднее значение или None для пустой последовательности."""
+    return sum(scores) / len(scores) if scores else None
+
+def determine_status(average, passing_average=DEFAULT_PASSING_AVERAGE):
+    """Возвращает статус допуска с учётом настраиваемого порога."""
+    if average is None:
+        return "нет данных"
+    return "допущен" if average >= passing_average else "не допущен"
+```[cite: 11]
+
+#### 3.3. `university_rating/rating.py`
+```python
+"""Модуль формирования и сортировки рейтинга студентов."""
+
+from .calculations import DEFAULT_PASSING_AVERAGE, calculate_average, determine_status
+from .validation import validate_scores, validate_student
+
+def build_student_result(student, passing_average=DEFAULT_PASSING_AVERAGE):
+    """Формирует новую итоговую запись одного студента."""
+    validate_student(student)
+    scores = validate_scores(student["scores"])
+    average = calculate_average(scores)
+    return {
+        "id": student["id"],
+        "name": student["name"],
+        "average": average,
+        "status": determine_status(average, passing_average=passing_average),
+    }
+
+def _sort_key(item):
+    """Внутренний ключ для сортировки: сначала с расчитанным средним, затем по убыванию среднего."""
+    average = item["average"]
+    return average is not None, average or 0
+
+def build_rating(students, passing_average=DEFAULT_PASSING_AVERAGE):
+    """Возвращает рейтинг студентов, не изменяя исходные записи."""
+    results = [build_student_result(item, passing_average=passing_average) for item in students]
+    return sorted(results, key=_sort_key, reverse=True)
+```[cite: 11, 12]
+
+#### 3.4. `university_rating/report.py`
+```python
+"""Модуль текстового представления результатов рейтинга."""
+
+def format_average(value):
+    """Форматирует средний балл до 2 знаков после запятой или возвращает прочерк."""
+    return "-" if value is None else f"{value:.2f}"
+
+def format_rating(rows):
+    """Формирует текстовую таблицу рейтинга группы."""
+    lines = ["Рейтинг группы"]
+    for position, row in enumerate(rows, start=1):
+        average = format_average(row["average"])
+        lines.append(f"{position}. {row['name']}: {average} {row['status']}")
+    return "\n".join(lines)
+```
+
+#### 3.5. `university_rating/__init__.py`
+```python
+"""Публичный интерфейс пакета university_rating."""
+
+from .rating import build_rating, build_student_result
+
+__all__ = ["build_rating", "build_student_result"]
+```[cite: 12]
+
+#### 3.6. `university_rating/main.py`
+```python
+"""Точка входа приложения."""
+
+from .rating import build_rating
+from .report import format_rating
+
+def load_demo_data():
+    return [
+        {"id": 101, "name": "Amina", "scores": [88, 92, 79]},
+        {"id": 102, "name": "Dias", "scores": [45, 52, 48]},
+        {"id": 103, "name": "Mira", "scores": []},
+        {"id": 104, "name": "Arman", "scores": [60, 65, 58]}
+    ]
+
+def main():
+    students = load_demo_data()
+    
+    # 1. Стандартный запуск со значением по умолчанию (порог = 50)
+    print("=== Стандартный порог (50) ===")
+    rating_default = build_rating(students)
+    print(format_rating(rating_default))
+    
+    print("\n" + "="*30 + "\n")
+    
+    # 2. Демонстрация Варианта №9: Повышенный порог допуска (порог = 60)
+    print("=== Настраиваемый порог (60) ===")
+    rating_custom = build_rating(students, passing_average=60.0)
+    print(format_rating(rating_custom))
+
+if __name__ == "__main__":
+    main()
+```[cite: 12, 13]
+
+---
+
+### 4. Результаты запуска приложения
+Запуск производится из корня проекта `lab4_project` командой[cite: 10, 13]:
+```bash
+python -m university_rating.main
