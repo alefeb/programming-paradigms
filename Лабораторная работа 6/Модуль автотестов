@@ -1,0 +1,56 @@
+import unittest
+from main import (
+    validate_mark,
+    attendance_rate,
+    determine_access,
+    summarize_student,
+    build_rating,
+    format_report,
+)
+
+
+class TestAttendanceSystem(unittest.TestCase):
+
+    # 1. Нормальный сценарий
+    def test_attendance_rate_normal(self):
+        marks = ["P", "P", "A", "E"]
+        # С учетом уважительных: 3 / 4 = 75.0%
+        self.assertAlmostEqual(attendance_rate(marks, True), 75.0)
+        # Без учета уважительных: 2 / 4 = 50.0%
+        self.assertAlmostEqual(attendance_rate(marks, False), 50.0)
+
+    # 2. Граничный сценарий (пустой список)
+    def test_attendance_rate_empty(self):
+        self.assertIsNone(attendance_rate([]))
+
+    # 3. Ошибочный сценарий (невалидная маркерная строка)
+    def test_invalid_mark_value(self):
+        with self.assertRaises(ValueError):
+            validate_mark("X")
+
+    # 4. Ошибочный сценарий (некорректный тип данных)
+    def test_invalid_mark_type(self):
+        with self.assertRaises(TypeError):
+            validate_mark(True)
+
+    # 5. Проверка отсутствия побочных эффектов (неизменяемость входных данных)
+    def test_input_immutability(self):
+        original_marks = ["P", "A", "E"]
+        copy_marks = list(original_marks)
+        attendance_rate(original_marks)
+        self.assertEqual(original_marks, copy_marks)
+
+    # 6. Проверка сортировки и рейтингования
+    def test_build_rating_sorting(self):
+        students = [
+            {"id": 1, "name": "Low", "marks": ["A", "A"]},
+            {"id": 2, "name": "None", "marks": []},
+            {"id": 3, "name": "High", "marks": ["P", "P"]},
+        ]
+        rating = build_rating(students)
+        names_order = [s["name"] for s in rating]
+        self.assertEqual(names_order, ["High", "Low", "None"])
+
+
+if __name__ == "__main__":
+    unittest.main()

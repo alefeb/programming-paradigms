@@ -1,0 +1,159 @@
+"""
+Лабораторная работа №3.
+Тема: Процедурное программирование (Вариант 1 - Посещаемость).
+Составитель: сеньор-лектор Рашидинов Д.Р. (2026)
+"""
+
+from typing import Dict, List, Any, Union
+
+
+def validate_mark(mark: Union[str, int, float]) -> str:
+    """
+    Валидирует отметку посещаемости.
+    Принимает: 'P' (present), 'A' (absent), 'E' (excused).
+    Возвращает очищенную нормализованную строку.
+    """
+    if isinstance(mark, bool) or not isinstance(mark, str):
+        raise TypeError("Отметка посещаемости должна быть строкой.")
+    
+    clean_mark = mark.strip().upper()
+    valid_marks = {"P", "A", "E"}
+    if clean_mark not in valid_marks:
+        raise ValueError(f"Недопустимая отметка: '{mark}'. Допустимо: P, A, E.")
+    
+    return clean_mark
+
+
+def attendance_rate(marks: List[str], count_excused_as_present: bool = True) -> float | None:
+    """
+    Вычисляет процент посещаемости.
+    P = присутствие (1.0), A = отсутствие (0.0).
+    Если count_excused_as_present=True, E считается за присутствие (1.0).
+    """
+    if not isinstance(marks, list):
+        raise TypeError("Список отметок должен быть типом list.")
+    
+    if not marks:
+        return None
+
+    valid_marks = [validate_mark(m) for m in marks]
+    
+    total_count = len(valid_marks)
+    present_count = 0.0
+
+    for m in valid_marks:
+        if m == "P":
+            present_count += 1.0
+        elif m == "E":
+            if count_excused_as_present:
+                present_count += 1.0
+
+    return (present_count / total_count) * 100.0
+
+
+def determine_access(rate: float | None, threshold: float = 75.0) -> str:
+    """
+    Определяет статус допуска студента по его проценту посещаемости и порогу.
+    """
+    if not (0.0 <= threshold <= 100.0):
+        raise ValueError("Порог допуска должен быть в пределе от 0 до 100.")
+
+    if rate is None:
+        return "нет данных"
+    
+    return "допущен" if rate >= threshold else "не допущен"
+
+
+def summarize_student(
+    student: Dict[str, Any], 
+    threshold: float = 75.0, 
+    count_excused: bool = True
+) -> Dict[str, Any]:
+    """
+    Формирует итоговую агрегированную карточку студента.
+    """
+    if not isinstance(student, dict):
+        raise TypeError("Данные студента должны быть словарем.")
+
+    student_id = student.get("id")
+    name = student.get("name")
+    marks = student.get("marks", [])
+
+    if isinstance(student_id, bool) or not isinstance(student_id, int) or student_id <= 0:
+        raise ValueError("Идентификатор должен быть положительным целым числом.")
+
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Имя студента не должно быть пустым.")
+
+    rate = attendance_rate(marks, count_excused_as_present=count_excused)
+    status = determine_access(rate, threshold=threshold)
+
+    return {
+        "id": student_id,
+        "name": name.strip(),
+        "rate": rate,
+        "status": status,
+    }
+
+
+def build_rating(
+    students: List[Dict[str, Any]], 
+    threshold: float = 75.0, 
+    count_excused: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Сортирует студентов по убыванию процента посещаемости.
+    Студенты без данных размещаются в конце списка.
+    """
+    if not isinstance(students, list):
+        raise TypeError("Список студентов должен быть типом list.")
+
+    summaries = [
+        summarize_student(s, threshold=threshold, count_excused=count_excused)
+        for s in students
+    ]
+
+    return sorted(
+        summaries,
+        key=lambda item: (
+            item["rate"] is not None,
+            item["rate"] if item["rate"] is not None else -1.0,
+            item["name"]
+        ),
+        reverse=True
+    )
+
+
+def format_report(rating: List[Dict[str, Any]]) -> str:
+    """
+    Преобразует структурированный рейтинг в строковый отчёт для вывода.
+    """
+    if not isinstance(rating, list):
+        raise TypeError("Рейтинг должен быть представлен списком.")
+
+    lines = []
+    for pos, student in enumerate(rating, start=1):
+        rate_str = f"{student['rate']:.1f}%" if student["rate"] is not None else "N/A"
+        line = f"{pos}. {student['name']}: Посещаемость {rate_str} — {student['status']}"
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
+def main() -> None:
+    """Точка входа в программу. Координирует данные и вывод."""
+    dataset = [
+        {"id": 101, "name": "Амина", "marks": ["P", "P", "A", "P", "E"]},
+        {"id": 102, "name": "Диас", "marks": ["A", "A", "P", "A", "E"]},
+        {"id": 103, "name": "Мира", "marks": []},
+        {"id": 104, "name": "Аружан", "marks": ["P", "P", "P", "P"]},
+    ]
+
+    print("=== Отчет о посещаемости (E учитывается как P) ===")
+    rating = build_rating(dataset, threshold=75.0, count_excused=True)
+    report_text = format_report(rating)
+    print(report_text)
+
+
+if __name__ == "__main__":
+    main()
