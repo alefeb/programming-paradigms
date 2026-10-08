@@ -1,0 +1,284 @@
+"""
+Модуль обработки заявок технической поддержки.
+Лабораторная работа № 3. Вариант № 9 (Заявки поддержки).
+"""
+
+PRIORITY_MAP = {
+    "high": 1,
+    "medium": 2,
+    "low": 3
+}
+
+DEFAULT_SLA_LIMITS = {
+    "high": 15,      # 15 минут
+    "medium": 60,    # 60 минут
+    "low": 240       # 240 минут
+}
+
+
+def validate_ticket(ticket: dict) -> dict:
+    """Возвращает проверенную копию записи заявки."""
+    if not isinstance(ticket, dict):
+        raise TypeError("Заявка должна быть словарём")
+
+    required_fields = {"id", "applicant", "priority", "created_at", "status"}
+    missing = required_fields - ticket.keys()
+    if missing:
+        raise ValueError(f"Отсутствуют обязательные поля: {sorted(missing)}")
+
+    ticket_id = ticket["id"]
+    if isinstance(ticket_id, bool) or not isinstance(ticket_id, int) or ticket_id <= 0:
+        raise ValueError("Идентификатор заявки должен быть положительным целым числом")
+
+    applicant = ticket["applicant"]
+    if not isinstance(applicant, str) or not applicant.strip():
+        raise ValueError("Имя заявителя не может быть пустым")
+
+    priority = ticket["priority"]
+    if priority not in PRIORITY_MAP:
+        raise ValueError(f"Недопустимый приоритет: {priority}")
+
+    created_at = ticket["created_at"]
+    if isinstance(created_at, bool) or not isinstance(created_at, (int, float)) or created_at < 0:
+        raise ValueError("Время создания должно быть неотрицательным числом")
+
+    valid_statuses = {"open", "in_progress", "resolved", "closed"}
+    status = ticket["status"]
+    if status not in valid_statuses:
+        raise ValueError(f"Недопустимый статус: {status}")
+
+    return {
+        "id": ticket_id,
+        "applicant": applicant.strip(),
+        "priority": priority,
+        "created_at": float(created_at),
+        "status": status
+    }
+
+
+def priority_key(ticket: dict) -> tuple:
+    """Формирует ключ для сортировки: сначала наивысший приоритет, затем раннее время."""
+    valid_ticket = validate_ticket(ticket)
+    return (PRIORITY_MAP[valid_ticket["priority"]], valid_ticket["created_at"])
+
+
+def check_sla_violation(ticket: dict, current_time: float, sla_limits: dict = None) -> bool:
+    """Проверяет, превышено ли время ожидания SLA для нерешённой заявки."""
+    if sla_limits is None:
+        sla_limits = DEFAULT_SLA_LIMITS
+
+    valid_ticket = validate_ticket(ticket)
+    if isinstance(current_time, bool) or not isinstance(current_time, (int, float)) or current_time < 0:
+        raise ValueError("Текущее время должно быть неотрицательным числом")
+
+    if valid_ticket["status"] in {"resolved", "closed"}:
+        return False
+
+    wait_time = current_time - valid_ticket["created_at"]
+    limit = sla_limits.get(valid_ticket["priority"], float("inf"))
+    return wait_time > limit
+
+
+def build_queue(tickets: list) -> list:
+    """Строит отсортированную очередь открытых и находящихся в работе заявок."""
+    if not isinstance(tickets, list):
+        raise TypeError("Список заявок должен быть типом list")
+
+    active_tickets = []
+    for t in tickets:
+        valid_t = validate_ticket(t)
+        if valid_t["status"] in {"open", "in_progress"}:
+            active_tickets.append(valid_t)
+
+    return sorted(active_tickets, key=priority_key)
+
+
+def status_counts(tickets: list) -> dict:
+    """Возвращает количество заявок по каждому статусу."""
+    if not isinstance(tickets, list):
+        raise TypeError("Список заявок должен быть типом list")
+
+    counts = {"open": 0, "in_progress": 0, "resolved": 0, "closed": 0}
+    for t in tickets:
+        valid_t = validate_ticket(t)
+        counts[valid_t["status"]] += 1
+
+    return counts
+
+
+def format_queue_report(queue: list, current_time: float) -> str:
+    """Формирует текстовый отчёт о состоянии очереди заявок."""
+    lines = ["=== Очередь заявок техподдержки ==="]
+    for position, ticket in enumerate(queue, start=1):
+        is_sla_violated = check_sla_violation(ticket, current_time)
+        sla_status = " [НАРУШЕНИЕ SLA]" if is_sla_violated else ""
+        lines.append(
+            f"{position}. ID {ticket['id']} ({ticket['applicant']}) | "
+            f"Приоритет: {ticket['priority']} | Статус: {ticket['status']}{sla_status}"
+        )
+    return "\n".join(lines)
+
+
+def main():
+    demo_tickets = [
+        {"id": 101, "applicant": "Амина", "priority": "medium", "created_at": 10.0, "status": "open"},
+        {"id": 102, "applicant": "Диас", "priority": "high", "created_at": 20.0, "status": "open"},
+        {"id": 103, "applicant": "Мира", "priority": "high", "created_at": 5.0, "status": "open"},
+        {"id": 104, "applicant": "Арман", "priority": "low", "created_at": 0.0, "status": "resolved"},
+    ]
+
+    current_time = 30.0  # текущий момент времени
+    queue = build_queue(demo_tickets)
+    stats = status_counts(demo_tickets)
+
+    print(format_queue_report(queue, current_time))
+    print("\nСтатистика по статусам:")
+    for status, count in stats.items():
+        print(f" - {status}: {count}")
+
+
+if __name__ == "__main__":
+    main()
+```[cite: 34, 35, 38]
+
+---
+
+### 4. Автоматические тесты (`test_support_tickets.py`)
+
+```python
+import unittest
+from support_tickets import (
+    validate_ticket,
+    priority_key,
+    check_sla_violation,
+    build_queue,
+    status_counts,
+    DEFAULT_SLA_LIMITS
+)
+
+
+class TestSupportTickets(unittest.TestCase):
+
+    def test_validate_ticket_success(self):
+        """1. Успешная валидация корректной заявки."""
+        ticket = {"id": 1, "applicant": "Иван", "priority": "high", "created_at": 10, "status": "open"}
+        validated = validate_ticket(ticket)
+        self.assertEqual(validated["id"], 1)
+        self.assertEqual(validated["created_at"], 10.0)
+
+    def test_invalid_priority_raises_error(self):
+        """2. Ошибочный сценарий: недопустимый приоритет."""
+        ticket = {"id": 1, "applicant": "Иван", "priority": "urgent", "created_at": 10, "status": "open"}
+        with self.assertRaises(ValueError):
+            validate_ticket(ticket)
+
+    def test_missing_field_raises_error(self):
+        """3. Ошибочный сценарий: отсутствие обязательного поля."""
+        ticket = {"id": 1, "priority": "high", "created_at": 10, "status": "open"}
+        with self.assertRaises(ValueError):
+            validate_ticket(ticket)
+
+    def test_priority_queue_sorting(self):
+        """4. Граничный/Нормальный сценарий: сортировка очереди по приоритету и времени."""
+        tickets = [
+            {"id": 1, "applicant": "А1", "priority": "medium", "created_at": 5, "status": "open"},
+            {"id": 2, "applicant": "А2", "priority": "high", "created_at": 10, "status": "open"},
+            {"id": 3, "applicant": "А3", "priority": "high", "created_at": 2, "status": "open"},
+        ]
+        queue = build_queue(tickets)
+        # Ожидаемый порядок: ID 3 (high, t=2), ID 2 (high, t=10), ID 1 (medium, t=5)
+        self.assertEqual([t["id"] for t in queue], [3, 2, 1])
+
+    def test_sla_violation_check(self):
+        """5. Проверка Варианта повышенной сложности (SLA)."""
+        ticket = {"id": 1, "applicant": "А1", "priority": "high", "created_at": 0, "status": "open"}
+        # Ограничение high = 15 мин. Время 20 -> нарушение
+        self.assertTrue(check_sla_violation(ticket, current_time=20.0))
+        # Время 10 -> нет нарушения
+        self.assertFalse(check_sla_violation(ticket, current_time=10.0))
+
+    def test_source_data_is_not_mutated(self):
+        """6. Граничный сценарий: исходный список заявок не должен изменяться."""
+        tickets = [{"id": 1, "applicant": "А1", "priority": "high", "created_at": 5, "status": "open"}]
+        tickets_copy = [{"id": 1, "applicant": "А1", "priority": "high", "created_at": 5, "status": "open"}]
+        build_queue(tickets)
+        self.assertEqual(tickets, tickets_copy)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```[cite: 36, 38]
+
+---
+
+### 5. Результаты запуска программы и тестов
+
+**Вывод приложения (`python support_tickets.py`):**
+```text
+=== Очередь заявок техподдержки ===
+1. ID 103 (Мира) | Приоритет: high | Статус: open [НАРУШЕНИЕ SLA]
+2. ID 102 (Диас) | Приоритет: high | Статус: open
+3. ID 101 (Амина) | Приоритет: medium | Статус: open
+
+Статистика по статусам:
+ - open: 3
+ - in_progress: 0
+ - resolved: 1
+ - closed: 0
+```[cite: 35]
+
+**Вывод тестов (`python -m unittest test_support_tickets.py -v`):**
+```text
+test_invalid_priority_raises_error (test_support_tickets.TestSupportTickets) ... ok
+test_missing_field_raises_error (test_support_tickets.TestSupportTickets) ... ok
+test_priority_queue_sorting (test_support_tickets.TestSupportTickets) ... ok
+test_sla_violation_check (test_support_tickets.TestSupportTickets) ... ok
+test_source_data_is_not_mutated (test_support_tickets.TestSupportTickets) ... ok
+test_validate_ticket_success (test_support_tickets.TestSupportTickets) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK
+```[cite: 36]
+
+---
+
+### 6. Пояснение используемых областей видимости (Правило LEGB)
+1. **Local (Локальная)**: Все переменные внутри функций (например, `valid_t`, `active_tickets`, `counts`) создаются при вызове функций и уничтожаются при выходе из них[cite: 33, 34].
+2. **Global (Глобальная)**: Константы `PRIORITY_MAP` и `DEFAULT_SLA_LIMITS` объявлены на уровне модуля и используются функциями только для чтения, не вызывая неявного побочного эффекта[cite: 33, 34].
+3. **Built-in (Встроенная)**: Использование стандартных функций Python (`isinstance`, `sorted`, `len`, `float`)[cite: 33].
+*Средства `global` и `nonlocal` в основном коде не применялись, чтобы избежать неявных скрытых связей и сохранить предсказуемость функций*[cite: 32, 33, 39, 40].
+
+---
+
+### 7. Ответы на контрольные вопросы
+1. **Что означает процедурная декомпозиция?**  
+   Разделение крупной задачи на последовательность более мелких автономных подпрограмм (функций), каждой из которых вменяется одна задача[cite: 32, 33].
+2. **Чем процедура отличается от функции, возвращающей значение?**  
+   Функция выполняет вычисления и возвращает результат через `return`[cite: 32, 33]. Процедура выполняет действие с побочным эффектом (например, печать `print`) и обычно не возвращает значения (`None`)[cite: 32, 33].
+3. **Чем параметр отличается от аргумента?**  
+   Параметр — переменная в объявлении функции; аргумент — конкретное значение, передаваемое при вызове[cite: 33].
+4. **Что возвращает функция без явного `return`?**  
+   Объект `None`[cite: 32].
+5. **Что такое побочный эффект?**  
+   Изменение внешнего по отношению к функции состояния (запись в файл, вывод в консоль, сборка глобальных коллекций)[cite: 33].
+6. **В каком порядке Python ищет имя по правилу LEGB?**  
+   Local -> Enclosing -> Global -> Built-in[cite: 33].
+7. **Почему присваивание внутри функции обычно создаёт локальное имя?**  
+   Интерпретатор Python защищает внешние области видимости от случайной перезаписи данных внутри подпрограмм[cite: 33].
+8. **Когда применяются `global` и `nonlocal`?**  
+   `global` — для перезаписи переменных модуля; `nonlocal` — для изменения переменных внешней охватывающей функции[cite: 33].
+9. **Почему ввод и вывод следует отделять от вычислений?**  
+   Это обеспечивает гибкость кода, позволяет покрывать вычисления модульными тестами без эмуляции ввода/вывода[cite: 32, 33, 36].
+10. **Чем именованный аргумент полезен при вызове функции?**  
+    Повышает читаемость вызова и позволяет передавать аргументы в произвольном порядке[cite: 32].
+11. **Почему изменяемое значение нежелательно использовать как параметр по умолчанию?**  
+    Значение по умолчанию создаётся один раз при компиляции функции и сохраняет мутации между вызовами[cite: 32, 39].
+12. **Как тесты помогают оценить качество декомпозиции?**  
+    Если функцию легко протестировать отдельно изолированными данными, значит, декомпозиция выполнена качественно[cite: 32, 33, 36].
+
+---
+
+### 8. Вывод
+Задача обработки заявок была декомпозирована на изолированные функции с чётким разделением ответственности[cite: 32, 33]. Вычислительная логика полностью изолирована от ввода и вывода, а входные данные защищены от мутации[cite: 32, 33, 39]. Все 6 автоматических тестов успешно подтверждают работоспособность и соблюдение контрактов[cite: 36, 39].
